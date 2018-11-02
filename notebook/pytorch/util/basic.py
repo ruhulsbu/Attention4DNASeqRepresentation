@@ -35,7 +35,7 @@ def reverse_complement(sequence):
     return retseq
 
 def preprocess_data(file_name, label):
-    with open("/mnt/scratch4/hirak/deep_annotator_data/positve_sample.txt") as fp:
+    with open(file_name) as fp:
         content_data = [[c for c in line.strip()] for line in fp]
         content_label = [label]*len(content_data)
     return (content_data, content_label)
