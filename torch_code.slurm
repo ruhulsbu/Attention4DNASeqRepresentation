@@ -4,7 +4,7 @@
 #SBATCH --output=res.txt
 #SBATCH --ntasks=28
 #SBATCH --nodes=1
-#SBATCH --time=05:00
+#SBATCH --time=05:00:00
 #SBATCH -p gpu
 #SBATCH -o torch_gpu.out
 #SBATCH -e torch_gpu.err
