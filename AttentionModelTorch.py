@@ -7,40 +7,35 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import torch.optim as optim
-import pandas as pd
+#import pandas as pd
 
 
 from notebook.pytorch.util import basic
 print("Done!")
 
 # Loading the data
-original_pos_data, original_pos_label = basic.preprocess_data("/mnt/scratch7/hirak/Attention4DNASeqRepresentation/dataset/gene_range_start_codon.txt", 1)
-original_neg_data, original_neg_label = basic.preprocess_data("/mnt/scratch7/hirak/Attention4DNASeqRepresentation/dataset/intragenic_start_codon.txt", 0)
 
-data_size = 500000
-batch_size = 1000
-data_content = original_pos_data[:data_size] + original_neg_data[:data_size]
-pos_data = None
-neg_data = None
-data_label = original_pos_label[:data_size] + original_neg_label[:data_size] 
-pos_label = None
-neg_label = None
-print(len(data_content), np.sum(data_label))
+def load_data(data_size=1000, batch_size = 100):
+    original_pos_data, original_pos_label = basic.preprocess_data("/gpfs/scratch/hsarkar/attention_mechanism/Attention4DNASeqRepresentation/dataset/gene_range_start_codon.txt", 1)
+    original_neg_data, original_neg_label = basic.preprocess_data("/gpfs/scratch/hsarkar/attention_mechanism/Attention4DNASeqRepresentation/dataset/intragenic_start_codon.txt", 0)
 
-total_datasize = len(data_content)-len(data_content)%batch_size
-print(total_datasize, batch_size)
-rand_index = np.random.permutation(total_datasize)
-data_content = [data_content[i] for i in rand_index]
-data_label = [data_label[i] for i in rand_index]
-print(len(data_content), np.sum(data_label))
+    data_content = original_pos_data[:data_size] + original_neg_data[:data_size]
+    data_label = original_pos_label[:data_size] + original_neg_label[:data_size] 
 
-X = torch.from_numpy(np.array(data_content).astype(int))
-Y = torch.from_numpy(np.array(data_label).reshape(len(data_label),1).astype(np.int))
+    total_datasize = len(data_content)-len(data_content)%batch_size
+    rand_index = np.random.permutation(total_datasize)
+    data_content = [data_content[i] for i in rand_index]
+    data_label = [data_label[i] for i in rand_index]
+
+    print(len(data_content), np.sum(data_label))
+    print("Data Loader Completed")
+    return (data_content, data_label)
+    
 
 class AttnDecoderRNN(nn.Module):#corrected batch faster
     #(self, time_steps, embedding_dim, hidden_dim, vocab_size, tagset_size, mini_batch)
     def __init__(self, vocab_size, embedding_dim, \
-                 hidden_dim, batch_size=100, debug=1, \
+                 hidden_dim, device, batch_size=100, debug=1, \
                  tagset_size=1, time_steps=101):
         super(AttnDecoderRNN, self).__init__()
         self.embedding_dim = embedding_dim
@@ -51,6 +46,7 @@ class AttnDecoderRNN(nn.Module):#corrected batch faster
         self.tagset_size = tagset_size
         self.hidden = self.init_hidden()
         self.debug = debug
+        self.device = device 
 
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
         self.lstm_one = nn.LSTM(embedding_dim, hidden_dim, batch_first=True)
@@ -58,7 +54,9 @@ class AttnDecoderRNN(nn.Module):#corrected batch faster
         self.lstm_two = nn.LSTM(hidden_dim, hidden_dim, batch_first=True)
         self.dropout_two = nn.Dropout(0.25)
 
-        self.attn_array = [nn.Linear(hidden_dim, hidden_dim) for i in range(time_steps)]
+        self.attn_array = nn.ModuleList([nn.Linear(hidden_dim, hidden_dim) for i in range(time_steps)])
+        
+
         """
         self.attn_combine = nn.Linear(hidden_dim, hidden_dim)
         self.dropout = nn.Dropout(self.dropout_p)
@@ -90,13 +88,16 @@ class AttnDecoderRNN(nn.Module):#corrected batch faster
         if self.debug == 1:
             print("LSTM Out Shape: ", lstm_permute.shape)
 
-        attention = [self.attn_array[i](lstm_permute[i][:]) \
-                     for i in range(self.time_steps)]
+        attention = [self.attn_array[i](lstm_permute[i][:]) for i in range(self.time_steps)]
         attention = torch.stack(attention)
+        attention.to(device)
+        
         attention = attention.permute(1, 0, 2)
         if self.debug == 1:
             print("Attention Shape: ", attention.shape)
 
+
+        
         attn_weights = F.softmax(attention, dim=2)
         #attn_weights = attn_weights.view(self.minibatch_size, self.time_steps, 1)
         if self.debug == 1:
@@ -148,13 +149,8 @@ class AttnDecoderRNN(nn.Module):#corrected batch faster
         # Refer to the Pytorch documentation to see exactly
         # why they have this dimensionality.
         # The axes semantics are (num_layers, minibatch_size, hidden_dim)
-        return (torch.zeros(1, self.minibatch_size, self.hidden_dim),
-                torch.zeros(1, self.minibatch_size, self.hidden_dim))
-
-model = AttnDecoderRNN(5, 16, 16)
-print(model)
-optimizer = optim.Adam(model.parameters(), lr=0.001)
-criterion = nn.BCEWithLogitsLoss()
+        return (torch.zeros(1, self.minibatch_size, self.hidden_dim, device = device),
+                torch.zeros(1, self.minibatch_size, self.hidden_dim, device = device))
 
 def weighted_binary_cross_entropy(output, target, weights=None):
         
@@ -185,24 +181,43 @@ def binary_accuracy(preds, y):
     
     return acc
 
-from tqdm import tqdm_notebook as tqdm
+
 losses = []
 accuracies = []
 #batch_size = 10
-model = AttnDecoderRNN(5, 16, 16, batch_size=batch_size, debug=0)
+
+data_size=500000
+batch_size = 5000
+data_content, data_label = load_data(data_size, batch_size)
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(device)
+
+model = AttnDecoderRNN(5, 16, 16, device, batch_size=batch_size, debug=0)
+#model = model.cuda()
+model.to(device)
+
+
+X = torch.from_numpy(np.array(data_content).astype(int))
+Y = torch.from_numpy(np.array(data_label).reshape(len(data_label),1).astype(np.int))
+
+X, Y = X.to(device), Y.to(device)
 print(model)
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 criterion = nn.BCEWithLogitsLoss()
 
-num_epochs = 100
+print("Cuda should be used from here !!")
+num_epochs = 50
 with open("progress.txt", "w") as fp:
-    for epoch in tqdm(range(num_epochs)):  # again, normally you would NOT do 300 epochs, it is toy data
+    for epoch in range(num_epochs):  # again, normally you would NOT do 300 epochs, it is toy data
         total_loss = 0
         total_acc = 0
 
         for index in range(0, len(X), batch_size):
             sentence = X[index : index+batch_size]#.reshape(len(X[0]))
             tags = Y[index : index+batch_size]#.reshape(len(Y[0]))
+            sentence.to(device)
+            tags.to(device)
             #print(sentence.shape, tags.shape)
             # Step 1. Remember that Pytorch accumulates gradients.
             # We need to clear them out before each instance
@@ -212,6 +227,7 @@ with open("progress.txt", "w") as fp:
             # detaching it from its history on the last instance.
             model.hidden = model.init_hidden()
 
+            
             # Step 2. Get our inputs ready for the network, that is, turn them into
             # Tensors of word indices.
             # sentence_in = prepare_sequence(sentence, word_to_ix)
@@ -231,7 +247,7 @@ with open("progress.txt", "w") as fp:
             #  calling optimizer.step()
             loss = criterion(tag_scores, targets)
             #loss = weighted_binary_cross_entropy(tag_scores, targets, weights=weights)
-            total_loss += loss.data.numpy()
+            total_loss += loss.item()
 
             acc = binary_accuracy(tag_scores, targets)
             total_acc += acc
@@ -252,10 +268,13 @@ with open("progress.txt", "w") as fp:
         fp.write("Epoch {}/{}, Loss: {:.3f}, Accuracy: {:.3f}\n".format(epoch+1,num_epochs, losses[-1], accuracies[-1]))
 
 
+## Save the model
+torch.save(model.state_dict(), "attention_model_apr_2.pt")
+
 with open("attention_loss.tsv", "w") as fp:
     for l in losses:
         fp.write("{}\n".format(l))
 
 with open("attention_accuracy.tsv", "w") as fp:
-    with a in accuracies:
+    for a in accuracies:
         fp.write("{}\n".format(a)) 
