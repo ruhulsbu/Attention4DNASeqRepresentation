@@ -186,7 +186,7 @@ losses = []
 accuracies = []
 #batch_size = 10
 
-data_size=500000
+data_size=1500000
 batch_size = 5000
 data_content, data_label = load_data(data_size, batch_size)
 
@@ -207,7 +207,7 @@ optimizer = optim.Adam(model.parameters(), lr=0.001)
 criterion = nn.BCEWithLogitsLoss()
 
 print("Cuda should be used from here !!")
-num_epochs = 50
+num_epochs = 100
 with open("progress.txt", "w") as fp:
     for epoch in range(num_epochs):  # again, normally you would NOT do 300 epochs, it is toy data
         total_loss = 0
@@ -269,7 +269,7 @@ with open("progress.txt", "w") as fp:
 
 
 ## Save the model
-torch.save(model.state_dict(), "attention_model_apr_2.pt")
+torch.save(model.state_dict(), "models/attention_model_apr_4.pt")
 
 with open("attention_loss.tsv", "w") as fp:
     for l in losses:
