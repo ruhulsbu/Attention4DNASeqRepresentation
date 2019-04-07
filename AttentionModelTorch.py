@@ -10,26 +10,80 @@ import torch.optim as optim
 #import pandas as pd
 
 
-from notebook.pytorch.util import basic
 print("Done!")
 
 # Loading the data
 
+#Read the Input File
+
+def read_input_file(file_path, label=-1):
+    x_data = []
+    y_data = []
+
+    file_read = open(file_path, "r")
+    for line in file_read:
+        data = [int(i) for i in line.strip()]
+        x_data.append(data)
+        y_data.append(label)
+        #print(x_data[-1], y_data[-1])
+        if len(x_data) == max_data_size:
+            break
+    file_read.close()
+    print("Sequences Read: ", len(x_data))
+    return np.array(x_data), np.array(y_data)
+
+
 def load_data(data_size=1000, batch_size = 100):
-    original_pos_data, original_pos_label = basic.preprocess_data("/gpfs/scratch/hsarkar/attention_mechanism/Attention4DNASeqRepresentation/dataset/gene_range_start_codon.txt", 1)
-    original_neg_data, original_neg_label = basic.preprocess_data("/gpfs/scratch/hsarkar/attention_mechanism/Attention4DNASeqRepresentation/dataset/intragenic_start_codon.txt", 0)
+    root_dir = "/mnt/scratch7/hirak/"
 
-    data_content = original_pos_data[:data_size] + original_neg_data[:data_size]
-    data_label = original_pos_label[:data_size] + original_neg_label[:data_size] 
+    x_data_pos, y_data_pos = read_input_file(os.path.join(root_dir, "Attention4DNASeqRepresentation/dataset/gene_range_start_codon.txt"), 1)
 
-    total_datasize = len(data_content)-len(data_content)%batch_size
-    rand_index = np.random.permutation(total_datasize)
-    data_content = [data_content[i] for i in rand_index]
-    data_label = [data_label[i] for i in rand_index]
+    original_neg_intergenic_data, original_neg_intergenic_label = read_input_file(os.path.join(root_dir, "Attention4DNASeqRepresentation/dataset/intragenic_start_codon.txt"), 0)
+    original_neg_coding_data, original_neg_coding_label = read_input_file(os.path.join(root_dir, "Attention4DNASeqRepresentation/dataset/coding_start_codon.txt"), 0)
 
-    print(len(data_content), np.sum(data_label))
-    print("Data Loader Completed")
-    return (data_content, data_label)
+    x_data_neg = np.concetanate((original_neg_coding_data, original_neg_intergenic_data))
+    y_data_neg = np.concetanate((original_neg_coding_label, original_neg_intergenic_label))
+
+    x_data_pos = x_data_pos[:data_size]
+    y_data_pos = y_data_pos[:data_size]
+
+    x_data_neg = x_data_neg[:data_size]
+    y_data_neg = y_data_neg[:data_size]
+
+    np.random.shuffle(x_data_neg)
+    np.random.shuffle(x_data_pos)
+
+    train_index = int((len(x_data_pos) / batch_size) * 0.60 * batch_size)
+    eval_index = train_index + int((len(x_data_pos) / batch_size) * 0.20 * batch_size)
+    test_index = eval_index + int((len(x_data_pos) / batch_size) * 0.20 * batch_size)
+
+    print("train, eval, test = ", (train_index, eval_index, test_index))
+
+    #Process Negative Data
+
+    x_train = x_data_neg[0:train_index]
+    y_train = y_data_neg[0:train_index]
+
+    x_eval = x_data_neg[train_index:eval_index]
+    y_eval = y_data_neg[train_index:eval_index]
+
+    x_test = x_data_neg[eval_index:test_index]
+    y_test = y_data_neg[eval_index:test_index]
+
+    #Process Positive Data
+
+    x_train = np.append(x_train, x_data_pos[0:train_index], axis=0)
+    y_train = np.append(y_train, y_data_pos[0:train_index], axis=0)
+
+    x_eval = np.append(x_eval, x_data_pos[train_index:eval_index], axis=0)
+    y_eval = np.append(y_eval, y_data_pos[train_index:eval_index], axis=0)
+
+    x_test = np.append(x_test, x_data_pos[eval_index:test_index], axis=0)
+    y_test = np.append(y_test, y_data_pos[eval_index:test_index], axis=0)
+
+    print("Sanity Check: ", np.sum(y_train), np.sum(y_eval), np.sum(y_test)  
+
+    return (x_train, y_train, x_eval, y_eval, x_test, y_test)
     
 
 class AttnDecoderRNN(nn.Module):#corrected batch faster
@@ -55,7 +109,6 @@ class AttnDecoderRNN(nn.Module):#corrected batch faster
         self.dropout_two = nn.Dropout(0.25)
 
         self.attn_array = nn.ModuleList([nn.Linear(hidden_dim, hidden_dim) for i in range(time_steps)])
-        
 
         """
         self.attn_combine = nn.Linear(hidden_dim, hidden_dim)
@@ -186,9 +239,9 @@ losses = []
 accuracies = []
 #batch_size = 10
 
-data_size=1500000
-batch_size = 5000
-data_content, data_label = load_data(data_size, batch_size)
+data_size = 1000
+batch_size = 100
+x_train, y_train, x_eval, y_eval, x_test, y_test = load_data(data_size, batch_size)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
@@ -197,12 +250,16 @@ model = AttnDecoderRNN(5, 16, 16, device, batch_size=batch_size, debug=0)
 #model = model.cuda()
 model.to(device)
 
+X = torch.from_numpy(np.array(x_train).astype(int))
+Y = torch.from_numpy(np.array(y_train).reshape(len(y_train),1).astype(np.int))
 
-X = torch.from_numpy(np.array(data_content).astype(int))
-Y = torch.from_numpy(np.array(data_label).reshape(len(data_label),1).astype(np.int))
+X_test = torch.from_numpy(np.array(x_test).astype(int))
+Y_test = torch.from_numpy(np.array(y_test).reshape(len(y_test),1).astype(np.int))
 
 X, Y = X.to(device), Y.to(device)
+X_test, Y_test = X_test.to(device), Y_test.to(device)
 print(model)
+
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 criterion = nn.BCEWithLogitsLoss()
 
@@ -257,6 +314,11 @@ with open("progress.txt", "w") as fp:
 
             #print("Epoch {}/{}, Loss: {:.3f}, Accuracy: {:.3f}".format(epoch+1,num_epochs, loss.data[0], correct/x.shape[0]))
 
+
+        # run forward on this epoch
+        tag_scores_test, attn_weight_test = model.forward(X_test)
+        accuracy_test = binary_accuracy(tag_scores_test.flatten(), Y_test)
+
         losses.append(total_loss)
         accuracies.append(total_acc/(len(X)/batch_size))
 
@@ -264,7 +326,7 @@ with open("progress.txt", "w") as fp:
         #opt.step()
 
         #print(epoch, total_loss)#, total_acc)
-        print("Epoch {}/{}, Loss: {:.3f}, Accuracy: {:.3f}".format(epoch+1,num_epochs, losses[-1], accuracies[-1]))
+        print("Epoch {}/{}, Loss: {:.3f}, Accuracy: {:.3f}, Test Accuracy {:.3f}".format(epoch+1,num_epochs, losses[-1], accuracies[-1], accuracy_test))
         fp.write("Epoch {}/{}, Loss: {:.3f}, Accuracy: {:.3f}\n".format(epoch+1,num_epochs, losses[-1], accuracies[-1]))
 
 
