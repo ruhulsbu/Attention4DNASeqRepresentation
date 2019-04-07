@@ -14,7 +14,8 @@ print("Done!")
 
 # Loading the data
 
-#Read the Input File
+# Read the Input File
+max_data_size = 1527294
 
 def read_input_file(file_path, label=-1):
     x_data = []
@@ -41,8 +42,8 @@ def load_data(data_size=1000, batch_size = 100):
     original_neg_intergenic_data, original_neg_intergenic_label = read_input_file(os.path.join(root_dir, "Attention4DNASeqRepresentation/dataset/intragenic_start_codon.txt"), 0)
     original_neg_coding_data, original_neg_coding_label = read_input_file(os.path.join(root_dir, "Attention4DNASeqRepresentation/dataset/coding_start_codon.txt"), 0)
 
-    x_data_neg = np.concetanate((original_neg_coding_data, original_neg_intergenic_data))
-    y_data_neg = np.concetanate((original_neg_coding_label, original_neg_intergenic_label))
+    x_data_neg = np.concatenate((original_neg_coding_data, original_neg_intergenic_data))
+    y_data_neg = np.concatenate((original_neg_coding_label, original_neg_intergenic_label))
 
     x_data_pos = x_data_pos[:data_size]
     y_data_pos = y_data_pos[:data_size]
@@ -81,7 +82,7 @@ def load_data(data_size=1000, batch_size = 100):
     x_test = np.append(x_test, x_data_pos[eval_index:test_index], axis=0)
     y_test = np.append(y_test, y_data_pos[eval_index:test_index], axis=0)
 
-    print("Sanity Check: ", np.sum(y_train), np.sum(y_eval), np.sum(y_test)  
+    print("Sanity Check: ", np.sum(y_train), np.sum(y_eval), np.sum(y_test))
 
     return (x_train, y_train, x_eval, y_eval, x_test, y_test)
     
@@ -241,6 +242,7 @@ accuracies = []
 
 data_size = 1000
 batch_size = 100
+
 x_train, y_train, x_eval, y_eval, x_test, y_test = load_data(data_size, batch_size)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
