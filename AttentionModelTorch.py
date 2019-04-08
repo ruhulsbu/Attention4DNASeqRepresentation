@@ -249,7 +249,6 @@ batch_size = 1000
 x_train, y_train, x_test, y_test = load_data(data_size, batch_size)
 
 x_train, y_train, x_eval, y_eval, x_test, y_test = load_data(data_size, batch_size)
->>>>>>> ec4711af6d5ab1811194aaba5e172b84c80c1702
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
