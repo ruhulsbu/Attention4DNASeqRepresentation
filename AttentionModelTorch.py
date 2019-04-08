@@ -16,6 +16,8 @@ print("Done!")
 
 #Read the Input File
 
+max_data_size = 1527294
+
 def read_input_file(file_path, label=-1):
     x_data = []
     y_data = []
@@ -34,15 +36,16 @@ def read_input_file(file_path, label=-1):
 
 
 def load_data(data_size=1000, batch_size = 100):
-    root_dir = "/mnt/scratch7/hirak/"
+    #root_dir = "/mnt/scratch7/hirak/"
+    root_dir = "/gpfs/scratch/hsarkar/attention_mechanism"
 
     x_data_pos, y_data_pos = read_input_file(os.path.join(root_dir, "Attention4DNASeqRepresentation/dataset/gene_range_start_codon.txt"), 1)
 
     original_neg_intergenic_data, original_neg_intergenic_label = read_input_file(os.path.join(root_dir, "Attention4DNASeqRepresentation/dataset/intragenic_start_codon.txt"), 0)
     original_neg_coding_data, original_neg_coding_label = read_input_file(os.path.join(root_dir, "Attention4DNASeqRepresentation/dataset/coding_start_codon.txt"), 0)
 
-    x_data_neg = np.concetanate((original_neg_coding_data, original_neg_intergenic_data))
-    y_data_neg = np.concetanate((original_neg_coding_label, original_neg_intergenic_label))
+    x_data_neg = np.concatenate((original_neg_coding_data, original_neg_intergenic_data))
+    y_data_neg = np.concatenate((original_neg_coding_label, original_neg_intergenic_label))
 
     x_data_pos = x_data_pos[:data_size]
     y_data_pos = y_data_pos[:data_size]
@@ -54,36 +57,36 @@ def load_data(data_size=1000, batch_size = 100):
     np.random.shuffle(x_data_pos)
 
     train_index = int((len(x_data_pos) / batch_size) * 0.60 * batch_size)
-    eval_index = train_index + int((len(x_data_pos) / batch_size) * 0.20 * batch_size)
-    test_index = eval_index + int((len(x_data_pos) / batch_size) * 0.20 * batch_size)
+    # eval_index = train_index + int((len(x_data_pos) / batch_size) * 0.20 * batch_size)
+    test_index = train_index + int((len(x_data_pos) / batch_size) * 0.40 * batch_size)
 
-    print("train, eval, test = ", (train_index, eval_index, test_index))
+    print("train, test = ", (train_index, test_index))
 
     #Process Negative Data
 
     x_train = x_data_neg[0:train_index]
     y_train = y_data_neg[0:train_index]
 
-    x_eval = x_data_neg[train_index:eval_index]
-    y_eval = y_data_neg[train_index:eval_index]
+    x_test = x_data_neg[train_index:test_index]
+    y_test = y_data_neg[train_index:test_index]
 
-    x_test = x_data_neg[eval_index:test_index]
-    y_test = y_data_neg[eval_index:test_index]
+    # x_test = x_data_neg[eval_index:test_index]
+    # y_test = y_data_neg[eval_index:test_index]
 
     #Process Positive Data
 
     x_train = np.append(x_train, x_data_pos[0:train_index], axis=0)
     y_train = np.append(y_train, y_data_pos[0:train_index], axis=0)
 
-    x_eval = np.append(x_eval, x_data_pos[train_index:eval_index], axis=0)
-    y_eval = np.append(y_eval, y_data_pos[train_index:eval_index], axis=0)
+    x_test = np.append(x_test, x_data_pos[train_index:test_index], axis=0)
+    y_test = np.append(y_test, y_data_pos[train_index:test_index], axis=0)
 
-    x_test = np.append(x_test, x_data_pos[eval_index:test_index], axis=0)
-    y_test = np.append(y_test, y_data_pos[eval_index:test_index], axis=0)
+    # x_test = np.append(x_test, x_data_pos[eval_index:test_index], axis=0)
+    # y_test = np.append(y_test, y_data_pos[eval_index:test_index], axis=0)
 
-    print("Sanity Check: ", np.sum(y_train), np.sum(y_eval), np.sum(y_test)  
+    print("Sanity Check: ", np.sum(y_train), np.sum(y_test)) 
 
-    return (x_train, y_train, x_eval, y_eval, x_test, y_test)
+    return (x_train, y_train, x_test, y_test)
     
 
 class AttnDecoderRNN(nn.Module):#corrected batch faster
@@ -237,11 +240,12 @@ def binary_accuracy(preds, y):
 
 losses = []
 accuracies = []
+accuracy_test = []
 #batch_size = 10
 
-data_size = 1000
-batch_size = 100
-x_train, y_train, x_eval, y_eval, x_test, y_test = load_data(data_size, batch_size)
+data_size = 1500000
+batch_size = 1000
+x_train, y_train, x_test, y_test = load_data(data_size, batch_size)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
@@ -258,13 +262,13 @@ Y_test = torch.from_numpy(np.array(y_test).reshape(len(y_test),1).astype(np.int)
 
 X, Y = X.to(device), Y.to(device)
 X_test, Y_test = X_test.to(device), Y_test.to(device)
-print(model)
+#print(model)
 
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 criterion = nn.BCEWithLogitsLoss()
 
 print("Cuda should be used from here !!")
-num_epochs = 100
+num_epochs = 200
 with open("progress.txt", "w") as fp:
     for epoch in range(num_epochs):  # again, normally you would NOT do 300 epochs, it is toy data
         total_loss = 0
@@ -316,9 +320,17 @@ with open("progress.txt", "w") as fp:
 
 
         # run forward on this epoch
-        tag_scores_test, attn_weight_test = model.forward(X_test)
-        accuracy_test = binary_accuracy(tag_scores_test.flatten(), Y_test)
+        tot_test_acc = 0
+        for index in range(0, len(X_test), batch_size):
+            sentence = X_test[index : index+batch_size]#.reshape(len(X[0]))
+            tags = Y_test[index : index+batch_size]#.reshape(len(Y[0]))
+            sentence.to(device)
+            tags.to(device)
+            #model.hidden = model.init_hidden()
+            tag_scores_test, attn_weight_test = model(sentence)
+            tot_test_acc += binary_accuracy(tag_scores_test.flatten(), tags.float().flatten())
 
+        accuracy_test.append(tot_test_acc/(len(X_test)/batch_size))
         losses.append(total_loss)
         accuracies.append(total_acc/(len(X)/batch_size))
 
@@ -326,12 +338,18 @@ with open("progress.txt", "w") as fp:
         #opt.step()
 
         #print(epoch, total_loss)#, total_acc)
-        print("Epoch {}/{}, Loss: {:.3f}, Accuracy: {:.3f}, Test Accuracy {:.3f}".format(epoch+1,num_epochs, losses[-1], accuracies[-1], accuracy_test))
-        fp.write("Epoch {}/{}, Loss: {:.3f}, Accuracy: {:.3f}\n".format(epoch+1,num_epochs, losses[-1], accuracies[-1]))
+        print("Epoch {}/{}, Loss: {:.3f}, Accuracy: {:.3f}, Test Accuracy {:.3f}".format(epoch+1,num_epochs, losses[-1], accuracies[-1], accuracy_test[-1]))
+        fp.write("Epoch {}/{}, Loss: {:.3f}, Accuracy: {:.3f}, Test Accuracy {:.3f}".format(epoch+1,num_epochs, losses[-1], accuracies[-1], accuracy_test[-1]))
+
+        if(epoch < 10):
+            with open("ten_ecpoch.txt", "a") as fp2:
+                fp2.write("Epoch {}/{}, Loss: {:.3f}, Accuracy: {:.3f}, Test Accuracy {:.3f}".format(epoch+1,num_epochs, losses[-1], accuracies[-1], accuracy_test[-1]))
+
+        #fp.write("Epoch {}/{}, Loss: {:.3f}, Accuracy: {:.3f}\n".format(epoch+1,num_epochs, losses[-1], accuracies[-1]))
 
 
 ## Save the model
-torch.save(model.state_dict(), "models/attention_model_apr_4.pt")
+torch.save(model.state_dict(), "models/attention_model_apr_7.pt")
 
 with open("attention_loss.tsv", "w") as fp:
     for l in losses:
