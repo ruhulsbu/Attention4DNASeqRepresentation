@@ -40,7 +40,7 @@ def read_input_file(file_path, label=-1):
     return np.array(x_data), np.array(y_data)
 
 
-root_dir = "./"
+root_dir = "/gpfs/scratch/hsarkar/attention_mechanism/Attention4DNASeqRepresentation"
 x_data_pos_full, y_data_pos_full = read_input_file(os.path.join(root_dir, "dataset/gene_range_start_codon.txt"), 1)
 
 original_neg_intergenic_data, original_neg_intergenic_label = read_input_file(os.path.join(root_dir, "dataset/intragenic_start_codon.txt"), 0)
@@ -286,7 +286,7 @@ class AttnDecoderRNN(nn.Module):#corrected batch faster
                     torch.zeros(1, self.minibatch_size, self.hidden_dim, device = device))
 
 
-batch_size = 1000
+batch_size = 10000
 
 x_train, y_train, x_eval, y_eval, x_test, y_test = load_data(max_data_size, batch_size, data_type=sys.argv[3])#"one/two/None"
 print(x_train.shape, x_eval.shape, x_test.shape)
@@ -424,3 +424,5 @@ Y_eval = torch.from_numpy(np.array(y_eval).reshape(len(y_test),1).astype(np.int)
 X_eval, Y_eval = X_eval.to(device), Y_eval.to(device)
 
 evaluate_model(X_eval, Y_eval, "Independent Test")
+# Save the model
+#torch.save(model.state_dict(), "/gpfs/scratch/hsarkar/attention_mechanism/Attention4DNASeqRepresentation/models/attention_model_apr_11.pt")

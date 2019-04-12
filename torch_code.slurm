@@ -18,6 +18,6 @@ echo "activating conda"
 conda deactivate
 conda activate torch-base 
 
-cd /gpfs/scratch/hsarkar/attention_mechanism/Attention4DNASeqRepresentation
+cd /gpfs/scratch/hsarkar/attention_mechanism/Attention4DNASeqRepresentation/debug_code/
 
-python AttentionModelTorch.py
+python pytorch_debugging_code.py 1000000 10 none
