@@ -17,7 +17,25 @@ print("Done!")
 # Read the Input File
 max_data_size = 1527294
 
-max_data_size = 1527294
+#max_data_size = 10000
+
+def randomized_index(data, label):
+    rand_index = np.random.permutation(len(data))
+    
+    data = np.array([data[i] for i in rand_index])
+    label = np.array([label[i] for i in rand_index])
+    
+    return (data, label)
+
+def check_neg_pos(label):
+    pos, neg = 0, 0
+    for l in label:
+        if l == 0:
+            neg += 1
+        else:
+            pos += 1
+    print("neg: {}, pos {}".format(neg, pos))
+
 
 def read_input_file(file_path, label=-1):
     x_data = []
@@ -47,6 +65,8 @@ def load_data(data_size=1000, batch_size = 100):
 
     x_data_neg = np.concatenate((original_neg_coding_data, original_neg_intergenic_data))
     y_data_neg = np.concatenate((original_neg_coding_label, original_neg_intergenic_label))
+
+    x_data_neg, y_data_neg = randomized_index(x_data_neg, y_data_neg)
 
     x_data_pos = x_data_pos[:data_size]
     y_data_pos = y_data_pos[:data_size]
@@ -103,16 +123,26 @@ class AttnDecoderRNN(nn.Module):#corrected batch faster
         self.dropout_p = 0.25
         self.tagset_size = tagset_size
         self.hidden = self.init_hidden()
+        self.hidden_bi = self.init_hidden(bidirectional=True)
         self.debug = debug
         self.device = device 
 
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
         self.lstm_one = nn.LSTM(embedding_dim, hidden_dim, batch_first=True)
-        self.dropout_one = nn.Dropout(0.25)
+        self.dropout_one = nn.Dropout(0.4)
         self.lstm_two = nn.LSTM(hidden_dim, hidden_dim, batch_first=True)
-        self.dropout_two = nn.Dropout(0.25)
+        self.dropout_two = nn.Dropout(0.4)
+        self.lstm_three = nn.LSTM(hidden_dim, hidden_dim, batch_first=True)
+        self.dropout_three = nn.Dropout(0.4)
 
         self.attn_array = nn.ModuleList([nn.Linear(hidden_dim, hidden_dim) for i in range(time_steps)])
+        
+        self.lstm_four = nn.LSTM(hidden_dim, hidden_dim, batch_first=True, bidirectional = True)
+        self.dropout_seven = nn.Dropout(0.4)
+        
+        self.lstm_five = nn.LSTM(hidden_dim*2, hidden_dim*2, batch_first=True, bidirectional = True)
+        self.dropout_eight = nn.Dropout(0.4)
+        
 
         """
         self.attn_combine = nn.Linear(hidden_dim, hidden_dim)
@@ -121,12 +151,12 @@ class AttnDecoderRNN(nn.Module):#corrected batch faster
         #embedding_dim*time_steps
         """
 
-        self.hidden2tag_one = nn.Linear(hidden_dim*time_steps, 512)
-        self.dropout_three = nn.Dropout(0.25)
-        self.hidden2tag_two = nn.Linear(512, 128)
+        self.hidden2tag_one = nn.Linear(hidden_dim*2*time_steps, 512)
         self.dropout_four = nn.Dropout(0.25)
-        self.hidden2tag_three = nn.Linear(128, 64)
+        self.hidden2tag_two = nn.Linear(512, 128)
         self.dropout_five = nn.Dropout(0.25)
+        self.hidden2tag_three = nn.Linear(128, 64)
+        self.dropout_six = nn.Dropout(0.25)
 
         self.output = nn.Linear(64, tagset_size)
 
@@ -140,6 +170,8 @@ class AttnDecoderRNN(nn.Module):#corrected batch faster
         lstm_out = self.dropout_one(lstm_out)
         lstm_out, self.hidden_two = self.lstm_two(lstm_out, self.hidden)
         lstm_out = self.dropout_two(lstm_out)
+        lstm_out, self.hidden_three = self.lstm_three(lstm_out, self.hidden)
+        lstm_out = self.dropout_three(lstm_out)
         #"""
         lstm_permute = lstm_out.permute(1, 0, 2)
         if self.debug == 1:
@@ -168,6 +200,18 @@ class AttnDecoderRNN(nn.Module):#corrected batch faster
         """
         #attn_applied = init_embed
         attn_applied = attn_weights * init_embed
+        
+        # potential lstm 
+        if self.debug == 1:
+            print("Attention Applied Shape: ", attn_applied.shape)
+
+        lstm_out, self.hidden_one = self.lstm_four(attn_applied, self.hidden_bi)
+        lstm_out = self.dropout_seven(lstm_out)
+        if self.debug == 1:
+            print("LSTM out: ", lstm_out.shape)
+        # lstm_out, self.hidden_two = self.lstm_five(lstm_out, self.hidden_bi)
+        # lstm_out = self.dropout_eight(lstm_out)    
+        
         #attn_applied = attn_applied.view(self.minibatch_size, self.time_steps, -1)
         #attn_applied = torch.sum(attn_applied, dim=1)
         if self.debug == 1:
@@ -176,23 +220,23 @@ class AttnDecoderRNN(nn.Module):#corrected batch faster
         #output = F.relu(attn_applied)
         #"""
 
-        lstm_out = attn_applied.contiguous().view(self.minibatch_size, -1)
-        #lstm_output = lstm_out.contiguous().view(self.minibatch_size, -1)
+        # lstm_out = attn_applied.contiguous().view(self.minibatch_size, -1)
+        lstm_out = lstm_out.contiguous().view(self.minibatch_size, -1)
         if self.debug == 1:
             print("LSTM Output Shape: ", lstm_out.shape)
 
 
         dense_out = self.hidden2tag_one(lstm_out[:])
         dense_out = F.relu(dense_out[:])
-        dense_out = self.dropout_three(dense_out[:])
+        dense_out = self.dropout_four(dense_out[:])
 
         dense_out = self.hidden2tag_two(dense_out[:])
         dense_out = F.relu(dense_out[:])
-        dense_out = self.dropout_four(dense_out[:])
+        dense_out = self.dropout_five(dense_out[:])
 
         dense_out = self.hidden2tag_three(dense_out[:])
         dense_out = F.relu(dense_out[:])
-        dense_out = self.dropout_five(dense_out[:])
+        dense_out = self.dropout_six(dense_out[:])
 
         tag_space = self.output(dense_out[:])
         #print(tag_space.shape)
@@ -201,13 +245,18 @@ class AttnDecoderRNN(nn.Module):#corrected batch faster
         #print(tag_scores.shape)
         return tag_space, attn_applied
 
-    def init_hidden(self):
+    def init_hidden(self, bidirectional = False):
         # Before we've done anything, we dont have any hidden state.
         # Refer to the Pytorch documentation to see exactly
         # why they have this dimensionality.
         # The axes semantics are (num_layers, minibatch_size, hidden_dim)
-        return (torch.zeros(1, self.minibatch_size, self.hidden_dim, device = device),
-                torch.zeros(1, self.minibatch_size, self.hidden_dim, device = device))
+        if(bidirectional):
+            return (torch.zeros(2, self.minibatch_size, self.hidden_dim, device = device),
+                    torch.zeros(2, self.minibatch_size, self.hidden_dim, device = device))
+        else:
+            return (torch.zeros(1, self.minibatch_size, self.hidden_dim, device = device),
+                    torch.zeros(1, self.minibatch_size, self.hidden_dim, device = device))
+
 
 def weighted_binary_cross_entropy(output, target, weights=None):
         
@@ -244,11 +293,11 @@ accuracies = []
 accuracy_test = []
 #batch_size = 10
 
-data_size = 1500000
+data_size = 10000
 batch_size = 1000
 x_train, y_train, x_test, y_test = load_data(data_size, batch_size)
 
-x_train, y_train, x_eval, y_eval, x_test, y_test = load_data(data_size, batch_size)
+#x_train, y_train, x_eval, y_eval, x_test, y_test = load_data(data_size, batch_size)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
@@ -278,6 +327,7 @@ with open("progress.txt", "w") as fp:
         total_acc = 0
 
         for index in range(0, len(X), batch_size):
+            model.train()
             sentence = X[index : index+batch_size]#.reshape(len(X[0]))
             tags = Y[index : index+batch_size]#.reshape(len(Y[0]))
             sentence.to(device)
@@ -325,6 +375,7 @@ with open("progress.txt", "w") as fp:
         # run forward on this epoch
         tot_test_acc = 0
         for index in range(0, len(X_test), batch_size):
+            model.eval()
             sentence = X_test[index : index+batch_size]#.reshape(len(X[0]))
             tags = Y_test[index : index+batch_size]#.reshape(len(Y[0]))
             sentence.to(device)
@@ -342,11 +393,11 @@ with open("progress.txt", "w") as fp:
 
         #print(epoch, total_loss)#, total_acc)
         print("Epoch {}/{}, Loss: {:.3f}, Accuracy: {:.3f}, Test Accuracy {:.3f}".format(epoch+1,num_epochs, losses[-1], accuracies[-1], accuracy_test[-1]))
-        fp.write("Epoch {}/{}, Loss: {:.3f}, Accuracy: {:.3f}, Test Accuracy {:.3f}".format(epoch+1,num_epochs, losses[-1], accuracies[-1], accuracy_test[-1]))
+        fp.write("Epoch {}/{}, Loss: {:.3f}, Accuracy: {:.3f}, Test Accuracy {:.3f}\n".format(epoch+1,num_epochs, losses[-1], accuracies[-1], accuracy_test[-1]))
 
         if(epoch < 10):
             with open("ten_ecpoch.txt", "a") as fp2:
-                fp2.write("Epoch {}/{}, Loss: {:.3f}, Accuracy: {:.3f}, Test Accuracy {:.3f}".format(epoch+1,num_epochs, losses[-1], accuracies[-1], accuracy_test[-1]))
+                fp2.write("Epoch {}/{}, Loss: {:.3f}, Accuracy: {:.3f}, Test Accuracy {:.3f}\n".format(epoch+1,num_epochs, losses[-1], accuracies[-1], accuracy_test[-1]))
 
         #fp.write("Epoch {}/{}, Loss: {:.3f}, Accuracy: {:.3f}\n".format(epoch+1,num_epochs, losses[-1], accuracies[-1]))
 
