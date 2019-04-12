@@ -296,7 +296,7 @@ check_neg_pos(y_test)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print("Running on: ", device)
-model = AttnDecoderRNN(5, 16, 16, device, batch_size=batch_size, debug=0)
+model = AttnDecoderRNN(5, 32, 32, device, batch_size=batch_size, debug=0)
 #model = model.cuda()
 model.to(device)
 print(model)
@@ -392,7 +392,35 @@ for epoch in range(num_epochs):  # again, normally you would NOT do 300 epochs, 
 
     #print(epoch, total_loss)#, total_acc)
     print("Epoch {}/{}, Loss: {:.3f}, Accuracy: {:.3f}, Test Accuracy {:.3f}".format(epoch+1,num_epochs, losses[-1], accuracies[-1], accuracy_test[-1]))
+    
 
+saved_model = [model]
+torch.save(model.state_dict(), "./pytorch_model.param")
+the_model = AttnDecoderRNN(5, 32, 32, device, batch_size=batch_size, debug=0)
+the_model.load_state_dict(torch.load("./pytorch_model.param"))
+the_model = the_model.to(device)
+saved_model.append(the_model)
 
+def evaluate_model(X_test, Y_test, test_type):
+    test_acc = []
+    for model in saved_model:
+        tot_test_acc = 0
+        for index in range(0, len(X_test), batch_size):
+            sentence = X_test[index : index+batch_size]#.reshape(len(X[0]))
+            tags = Y_test[index : index+batch_size]#.reshape(len(Y[0]))
+            sentence.to(device)
+            tags.to(device)
+            #model.hidden = model.init_hidden()
+            tag_scores_test, attn_weight_test = model(sentence)
+            tot_test_acc += binary_accuracy(tag_scores_test.flatten(), tags.float().flatten())
+            test_acc.append(tot_test_acc/(len(X_test)/batch_size))
+        
+        print("Epoch: ", test_type, test_acc[-1])
 
+evaluate_model(X_test, Y_test, "Test")
 
+X_eval = torch.from_numpy(np.array(x_eval).astype(int))
+Y_eval = torch.from_numpy(np.array(y_eval).reshape(len(y_test),1).astype(np.int))
+X_eval, Y_eval = X_eval.to(device), Y_eval.to(device)
+
+evaluate_model(X_eval, Y_eval, "Independent Test")
